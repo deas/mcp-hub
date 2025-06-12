@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import customFetch from './proxy-fetch.js';
+global.fetch = customFetch;
+
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { startServer } from "../server.js";

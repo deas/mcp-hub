@@ -41,6 +41,11 @@
     "release:major": "bash scripts/release.sh major",
     "prepublishOnly": "npm run build"
   },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "http-proxy-agent": "^7.0.0",
+    "https-proxy-agent": "^7.0.0"
+  },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@vitest/coverage-v8": "^3.2.1",
