@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import commentJson from "comment-json";
 import chokidar from "chokidar";
 import { EventEmitter } from "events";
 import path from "path";
@@ -103,7 +104,7 @@ export class ConfigManager extends EventEmitter {
 
     try {
       const content = await fs.readFile(this.configPath, "utf-8");
-      const newConfig = JSON.parse(content);
+      const newConfig = commentJson.parse(content);
 
       // Validate config structure
       if (!newConfig.mcpServers || typeof newConfig.mcpServers !== "object") {
@@ -235,6 +236,40 @@ export class ConfigManager extends EventEmitter {
       // Wrap any other errors
       throw wrapError(error, "CONFIG_READ_ERROR", {
         path: this.configPath,
+      });
+    }
+  }
+
+  async saveConfig(configObject, filePath) {
+    const targetPath = filePath || this.configPath;
+
+    if (!targetPath) {
+      throw new ConfigError(
+        "No config path specified for saving. Initialize ConfigManager with a path or provide it to saveConfig.",
+        { configObject }
+      );
+    }
+
+    if (!configObject || typeof configObject !== "object") {
+      throw new ConfigError("Invalid configuration object provided.", {
+        configObject,
+      });
+    }
+
+    try {
+      const jsonString = commentJson.stringify(configObject, null, 2);
+      await fs.writeFile(targetPath, jsonString, "utf-8");
+      logger.debug(`Config saved successfully to ${targetPath}`, {
+        path: targetPath,
+      });
+      // Optionally, update the in-memory config as well
+      this.config = configObject;
+      this.#previousConfig = JSON.parse(JSON.stringify(configObject));
+
+
+    } catch (error) {
+      throw wrapError(error, "CONFIG_WRITE_ERROR", {
+        path: targetPath,
       });
     }
   }

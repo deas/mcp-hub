@@ -1,0 +1,20 @@
+{
+  // This is a top-level comment
+  "mcpServers": {
+    "server1": {
+      "command": "node",
+      "args": ["server.js"], // This is an inline comment
+      "env": {
+        "PORT": "3000"
+      },
+      "disabled": false,
+      /* This is a
+         multi-line comment */
+      "dev": {
+        "enabled": true,
+        "watch": ["src/**/*.js"],
+        "cwd": "/path/to/project"
+      }
+    }
+  }
+}

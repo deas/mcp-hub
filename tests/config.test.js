@@ -3,6 +3,8 @@ import { ConfigManager } from "../src/utils/config.js";
 import fs from "fs/promises";
 import chokidar from "chokidar";
 import { EventEmitter } from "events";
+import path from "path"; // For potential temp file paths, though using fixed path for now
+import commentJson from "comment-json";
 
 // Mock chokidar
 vi.mock("chokidar", () => ({
@@ -145,6 +147,37 @@ describe("ConfigManager", () => {
       await expect(configManager.loadConfig()).rejects.toThrow(
         "Server 'test' has invalid environment config"
       );
+    });
+
+    it("should load config from file with comments", async () => {
+      const configWithCommentsPath = "tests/fixtures/config-with-comments.json";
+      // We don't need to mock readFile here as we want to test the actual file reading and comment stripping
+      // const readFileSpy = vi.spyOn(fs, "readFile").mockResolvedValue(configContentWithComments);
+
+      configManager = new ConfigManager(configWithCommentsPath);
+      await configManager.loadConfig();
+
+      const expectedConfig = {
+        mcpServers: {
+          server1: {
+            command: "node",
+            args: ["server.js"],
+            env: {
+              PORT: "3000",
+            },
+            disabled: false,
+            dev: {
+              enabled: true,
+              watch: ["src/**/*.js"],
+              cwd: "/path/to/project",
+            },
+            type: "stdio",
+          },
+        },
+      };
+
+      expect(configManager.getConfig()).toEqual(expectedConfig);
+      // expect(readFileSpy).toHaveBeenCalledWith(configWithCommentsPath, "utf-8");
     });
 
     describe("dev field validation", () => {
@@ -378,6 +411,113 @@ describe("ConfigManager", () => {
     it("should do nothing if no watcher exists", () => {
       configManager = new ConfigManager("/path/to/config.json");
       configManager.stopWatching();
+    });
+  });
+
+  describe("saveConfig", () => {
+    const tempConfigPath = "tests/fixtures/temp-config-save.json";
+    const initialCommentedConfigPath = "tests/fixtures/config-with-comments.json";
+
+    const expectedCleanConfigObject = { //This is config-with-comments.json without comments
+      mcpServers: {
+        server1: {
+          command: "node",
+          args: ["server.js"],
+          env: {
+            PORT: "3000",
+          },
+          disabled: false,
+          dev: {
+            enabled: true,
+            watch: ["src/**/*.js"],
+            cwd: "/path/to/project",
+          },
+          // type: "stdio", // Type is added by loadConfig, not present in original file
+        },
+      },
+    };
+     const expectedCleanConfigObjectWithType = { //This is config-with-comments.json without comments but with type
+      mcpServers: {
+        server1: {
+          ...expectedCleanConfigObject.mcpServers.server1,
+          type: "stdio",
+        },
+      },
+    };
+
+
+    afterEach(async () => {
+      // Clean up the temporary file
+      try {
+        await fs.unlink(tempConfigPath);
+      } catch (error) {
+        // Ignore if file doesn't exist (e.g., test failed before creating it)
+        if (error.code !== "ENOENT") {
+          console.error("Error cleaning up temp file:", error);
+        }
+      }
+    });
+
+    it("should save the current configuration (including comment symbols) to a specified path", async () => {
+      // 1. Load a config. this.config will have comment symbols from comment-json.parse()
+      configManager = new ConfigManager(initialCommentedConfigPath);
+      const { config: loadedConfigWithSymbols } = await configManager.loadConfig();
+
+      // 2. Save this internal config (which has symbols) to a new temporary file
+      await configManager.saveConfig(loadedConfigWithSymbols, tempConfigPath);
+
+      // 3. Read the content of the temporary file
+      const savedRawContent = await fs.readFile(tempConfigPath, "utf-8");
+
+      // 4. Parse it again
+      const reParsedConfig = commentJson.parse(savedRawContent);
+
+      // 5. Assert that the re-parsed object is deep equal to the config object that was saved (which had symbols)
+      // .toEqual typically ignores symbol properties in deep equality checks, focusing on data.
+      // This effectively checks that the data part is preserved.
+      expect(reParsedConfig).toEqual(loadedConfigWithSymbols);
+
+      // Convert the loadedConfigWithSymbols (which has type added) to its string form as expected to be saved
+      const expectedSavedString = commentJson.stringify(loadedConfigWithSymbols, null, 2);
+
+      // 6. Assert that the raw file content is exactly what commentJson.stringify produced,
+      // including comments, because loadedConfigWithSymbols contained the comment symbols.
+      expect(savedRawContent).toEqual(expectedSavedString);
+    });
+
+    it("should save a given (clean) configuration object to the default path", async () => {
+      configManager = new ConfigManager(tempConfigPath); // Set up with default path
+
+      // Here, we save an object that does NOT have comment symbols (it's a plain object)
+      await configManager.saveConfig(expectedCleanConfigObjectWithType);
+
+      const savedContent = await fs.readFile(tempConfigPath, "utf-8");
+      const parsedSavedContent = commentJson.parse(savedContent); // or JSON.parse
+
+      // It should be equal to the plain object we saved
+      expect(parsedSavedContent).toEqual(expectedCleanConfigObjectWithType);
+      // And the string output should be a clean JSON string without comments
+      expect(savedContent).toEqual(commentJson.stringify(expectedCleanConfigObjectWithType, null, 2));
+    });
+
+
+    it("should throw error if no config path specified and not provided", async () => {
+      configManager = new ConfigManager({}); // Initialized with an object, no default path
+      await expect(
+        configManager.saveConfig(expectedCleanConfigObject)
+      ).rejects.toThrow(
+        "No config path specified for saving. Initialize ConfigManager with a path or provide it to saveConfig."
+      );
+    });
+
+    it("should throw error for invalid config object", async () => {
+      configManager = new ConfigManager(tempConfigPath);
+      await expect(
+        configManager.saveConfig(null, tempConfigPath)
+      ).rejects.toThrow("Invalid configuration object provided.");
+      await expect(
+        configManager.saveConfig("not-an-object", tempConfigPath)
+      ).rejects.toThrow("Invalid configuration object provided.");
     });
   });
 });
